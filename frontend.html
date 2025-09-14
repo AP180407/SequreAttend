@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Attendance System</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- face-api.js for facial recognition -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        /* Custom styles for a polished look */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+        }
+        .view {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        .active-view {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .loader {
+            border: 6px solid #e2e8f0; /* gray-200 */
+            border-radius: 50%;
+            border-top: 6px solid #4f46e5; /* indigo-600 */
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #recognition-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #image-container {
+            position: relative;
+            max-width: 100%;
+            display: inline-block;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            animation: fadeIn 0.3s;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 antialiased">
+
+    <div class="container mx-auto p-4 md:p-6 max-w-7xl">
+        <header class="text-center mb-10">
+            <div class="flex justify-center items-center gap-4">
+                 <svg class="w-12 h-12 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.17 48.17 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                </svg>
+                <h1 class="text-4xl md:text-5xl font-extrabold text-gray-800">AI Attendance System</h1>
+            </div>
+            <p class="text-gray-500 mt-3 text-lg">A seamless, intelligent solution for tracking attendance.</p>
+        </header>
+
+        <!-- Role Selection View -->
+        <section id="role-selection-view" class="active-view text-center bg-white p-8 rounded-xl shadow-xl">
+            <h2 class="text-3xl font-bold mb-8 text-gray-700">Select Your Role</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div onclick="showView('student-registration-view')" class="role-card p-8 bg-green-50 rounded-lg border-2 border-transparent hover:border-green-500 hover:shadow-2xl cursor-pointer transition-all duration-300 transform hover:-translate-y-2">
+                    <h3 class="text-2xl font-semibold text-green-800">Student</h3>
+                </div>
+                <div onclick="showView('professor-login-view')" class="role-card p-8 bg-blue-50 rounded-lg border-2 border-transparent hover:border-blue-500 hover:shadow-2xl cursor-pointer transition-all duration-300 transform hover:-translate-y-2">
+                    <h3 class="text-2xl font-semibold text-blue-800">Professor</h3>
+                </div>
+                <div onclick="showView('admin-login-view')" class="role-card p-8 bg-gray-100 rounded-lg border-2 border-transparent hover:border-gray-500 hover:shadow-2xl cursor-pointer transition-all duration-300 transform hover:-translate-y-2">
+                    <h3 class="text-2xl font-semibold text-gray-800">Admin</h3>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Login Views (Wrapper for consistent style) -->
+        <div class="max-w-md mx-auto">
+            <section id="admin-login-view" class="view bg-white p-8 rounded-xl shadow-xl">
+                <button onclick="showView('role-selection-view')" class="mb-6 text-indigo-600 hover:underline font-semibold">&larr; Back</button>
+                <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Admin Login</h2>
+                <form id="admin-login-form" class="space-y-6">
+                    <div>
+                        <label for="password" class="block text-gray-600 font-medium mb-2">Password</label>
+                        <input type="password" id="password" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-indigo-400/50 transform hover:-translate-y-0.5">Login</button>
+                    <p id="login-error" class="text-red-500 text-center pt-2"></p>
+                </form>
+            </section>
+
+            <section id="professor-login-view" class="view bg-white p-8 rounded-xl shadow-xl">
+                <button onclick="showView('role-selection-view')" class="mb-6 text-indigo-600 hover:underline font-semibold">&larr; Back</button>
+                <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Professor Login</h2>
+                <form id="professor-login-form" class="space-y-6">
+                    <div>
+                        <label for="professor-password" class="block text-gray-600 font-medium mb-2">Password</label>
+                        <input type="password" id="professor-password" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-indigo-400/50 transform hover:-translate-y-0.5">Login</button>
+                    <p id="professor-login-error" class="text-red-500 text-center pt-2"></p>
+                </form>
+            </section>
+
+             <section id="student-registration-view" class="view bg-white p-8 rounded-xl shadow-xl">
+                <button onclick="showView('role-selection-view')" class="mb-6 text-indigo-600 hover:underline font-semibold">&larr; Back</button>
+                <h2 class="text-2xl font-bold mb-2 text-center text-gray-700">Student Registration</h2>
+                <p class="text-center text-gray-500 mb-6">Your submission will be reviewed by an admin.</p>
+                <form id="student-registration-form" class="space-y-4">
+                    <div>
+                        <label for="student-name" class="block text-gray-600 font-medium mb-2">Full Name</label>
+                        <input type="text" id="student-name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    </div>
+                    <div>
+                        <label for="student-enrollment" class="block text-gray-600 font-medium mb-2">Enrollment Number</label>
+                        <input type="text" id="student-enrollment" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    </div>
+                    <div>
+                        <label for="student-image" class="block text-gray-600 font-medium mb-2">Your Photo (Clear, front-facing)</label>
+                        <input type="file" id="student-image" accept="image/jpeg, image/png" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" required>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-green-400/50 transform hover:-translate-y-0.5 !mt-8">Submit for Approval</button>
+                    <p id="student-status" class="text-center pt-2 font-medium"></p>
+                </form>
+            </section>
+        </div>
+
+        <!-- Admin Panel (Section 1) -->
+        <section id="admin-panel-view" class="view bg-white p-8 rounded-xl shadow-xl">
+             <button onclick="showView('role-selection-view')" class="mb-6 text-indigo-600 hover:underline font-semibold">&larr; Logout & Go Back</button>
+            <h2 class="text-3xl font-bold mb-8 text-center text-gray-800">Admin Dashboard</h2>
+            
+            <div id="pending-approvals-section" class="mb-12">
+                <h3 class="text-2xl font-semibold mb-4 border-b pb-3 text-gray-700">Pending Registrations</h3>
+                <div id="pending-list" class="space-y-4"></div>
+            </div>
+
+            <div class="mb-8 p-6 border rounded-lg bg-gray-50">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Add New Person Manually</h3>
+                <form id="add-person-form" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                    <input type="text" id="person-name" placeholder="Full Name" class="lg:col-span-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    <input type="text" id="person-enrollment" placeholder="Enrollment No." class="lg:col-span-1 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    <input type="file" id="person-image" accept="image/jpeg, image/png" class="lg:col-span-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" required>
+                    <button type="submit" class="lg:col-span-1 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 shadow-lg hover:shadow-indigo-400/50 transform hover:-translate-y-0.5">Add Person</button>
+                </form>
+                 <p id="admin-status" class="text-center mt-4 font-medium"></p>
+            </div>
+
+            <div>
+                <h3 class="text-2xl font-semibold mb-4 border-b pb-3 text-gray-700">Registered Individuals</h3>
+                <div id="person-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"></div>
+            </div>
+        </section>
+
+        <!-- Professor/Attendance View (Section 2) -->
+        <section id="student-professor-view" class="view bg-white p-8 rounded-xl shadow-xl">
+             <button onclick="showView('role-selection-view')" class="mb-6 text-indigo-600 hover:underline font-semibold">&larr; Logout & Go Back</button>
+            <h2 class="text-3xl font-bold mb-8 text-center text-gray-800">Attendance Portal</h2>
+            
+            <div class="mb-8 p-8 border-2 border-dashed rounded-lg bg-gray-50 text-center">
+                <h3 class="text-xl font-semibold mb-2 text-gray-700">Upload Group Photo</h3>
+                <p class="text-gray-500 mb-4">The AI will identify registered individuals and generate an attendance sheet.</p>
+                <input type="file" id="group-image" accept="image/jpeg, image/png" class="mx-auto block w-full max-w-lg text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+            </div>
+
+            <div id="status-container" class="text-center my-6">
+                 <div id="loader" class="loader mx-auto hidden"></div>
+                 <p id="status-message" class="text-lg font-medium text-gray-600 mt-4"></p>
+            </div>
+           
+            <div id="results-container" class="hidden">
+                 <div id="image-container" class="mb-8 flex justify-center bg-gray-100 p-4 rounded-lg">
+                    <img id="uploaded-image" class="rounded-lg shadow-md max-w-full h-auto" />
+                    <canvas id="recognition-canvas"></canvas>
+                </div>
+                <div>
+                    <h3 class="text-2xl font-semibold mb-4 text-center text-gray-700">Attendance Sheet</h3>
+                    <div class="overflow-x-auto rounded-lg border">
+                        <table class="min-w-full bg-white">
+                            <thead class="bg-gray-800 text-white">
+                                <tr>
+                                    <th class="text-left py-3 px-4 uppercase font-semibold text-sm">Name</th>
+                                    <th class="text-left py-3 px-4 uppercase font-semibold text-sm">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-table-body" class="text-gray-700 divide-y">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+    
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="modal-overlay hidden">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-center" onclick="event.stopPropagation();">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Are you sure?</h3>
+            <p class="text-gray-600 mb-6">This action cannot be undone. The person will be permanently removed.</p>
+            <div class="flex justify-center gap-4">
+                <button id="modal-cancel-btn" class="py-2 px-6 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">Cancel</button>
+                <button id="modal-confirm-btn" class="py-2 px-6 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">Confirm Remove</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Globals & Initial Setup ---
+        const ADMIN_PASS = "1234";
+        const PROFESSOR_PASS = "9876";
+        let labeledFaceDescriptors = null;
+        let personToRemoveEnrollmentNo = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof faceapi === 'undefined') {
+                alert('Could not load AI library. Please check your internet connection and try again.');
+                return;
+            }
+
+            document.getElementById('admin-login-form').addEventListener('submit', handleAdminLogin);
+            document.getElementById('professor-login-form').addEventListener('submit', handleProfessorLogin);
+            document.getElementById('add-person-form').addEventListener('submit', handleAddPerson);
+            document.getElementById('student-registration-form').addEventListener('submit', handleStudentRegistration);
+            document.getElementById('group-image').addEventListener('change', handleGroupImageUpload);
+            
+            // Modal listeners
+            document.getElementById('modal-cancel-btn').addEventListener('click', hideConfirmationModal);
+            document.getElementById('confirmation-modal').addEventListener('click', hideConfirmationModal);
+            document.getElementById('modal-confirm-btn').addEventListener('click', confirmRemovePerson);
+            
+            renderPersonList();
+            renderPendingList();
+        });
+        
+        // --- View Management ---
+        function showView(viewId) {
+            document.querySelectorAll('.view, .active-view').forEach(view => {
+                view.classList.remove('active-view');
+                view.classList.add('view');
+            });
+            const targetView = document.getElementById(viewId);
+            targetView.classList.add('active-view');
+            targetView.classList.remove('view');
+
+            if (viewId === 'student-professor-view') {
+                loadModelsAndDescriptors();
+            }
+            if (viewId === 'admin-panel-view') {
+                renderPendingList();
+                renderPersonList();
+            }
+        }
+
+        // --- LocalStorage Database Simulation ---
+        function getPeople() { return JSON.parse(localStorage.getItem('registeredPeople') || '[]'); }
+        function savePeople(people) { localStorage.setItem('registeredPeople', JSON.stringify(people)); }
+        function getPending() { return JSON.parse(localStorage.getItem('pendingRegistrations') || '[]'); }
+        function savePending(pending) { localStorage.setItem('pendingRegistrations', JSON.stringify(pending)); }
+
+        // --- Confirmation Modal Logic ---
+        function showConfirmationModal(enrollmentNo) {
+            personToRemoveEnrollmentNo = enrollmentNo;
+            document.getElementById('confirmation-modal').classList.remove('hidden');
+        }
+
+        function hideConfirmationModal() {
+            personToRemoveEnrollmentNo = null;
+            document.getElementById('confirmation-modal').classList.add('hidden');
+        }
+
+        function confirmRemovePerson() {
+            if (!personToRemoveEnrollmentNo) return;
+            let people = getPeople();
+            const updatedPeople = people.filter(p => p.enrollmentNo !== personToRemoveEnrollmentNo);
+            savePeople(updatedPeople);
+            renderPersonList();
+            labeledFaceDescriptors = null; 
+            hideConfirmationModal();
+        }
+
+        // --- Admin Panel Logic (Section 1) ---
+        function handleAdminLogin(event) {
+            event.preventDefault();
+            const passwordInput = document.getElementById('password');
+            const errorEl = document.getElementById('login-error');
+            if (passwordInput.value === ADMIN_PASS) {
+                errorEl.textContent = '';
+                passwordInput.value = '';
+                showView('admin-panel-view');
+            } else {
+                errorEl.textContent = 'Incorrect password. Please try again.';
+            }
+        }
+
+        function handleProfessorLogin(event) {
+            event.preventDefault();
+            const passwordInput = document.getElementById('professor-password');
+            const errorEl = document.getElementById('professor-login-error');
+            if (passwordInput.value === PROFESSOR_PASS) {
+                errorEl.textContent = '';
+                passwordInput.value = '';
+                showView('student-professor-view');
+            } else {
+                errorEl.textContent = 'Incorrect password. Please try again.';
+            }
+        }
+
+        async function handleAddPerson(event) {
+            event.preventDefault();
+            const nameInput = document.getElementById('person-name');
+            const enrollmentInput = document.getElementById('person-enrollment');
+            const imageInput = document.getElementById('person-image');
+            const statusEl = document.getElementById('admin-status');
+            
+            if (!nameInput.value || !enrollmentInput.value || imageInput.files.length === 0) {
+                statusEl.textContent = 'Please fill all fields.';
+                statusEl.style.color = 'red';
+                return;
+            }
+
+            statusEl.textContent = 'Processing...';
+            statusEl.style.color = 'blue';
+
+            try {
+                const imageBase64 = await toBase64(imageInput.files[0]);
+                const people = getPeople();
+
+                if (people.some(p => p.enrollmentNo === enrollmentInput.value)) {
+                     statusEl.textContent = 'A person with this enrollment number already exists.';
+                     statusEl.style.color = 'red';
+                     return;
+                }
+
+                people.push({ name: nameInput.value, enrollmentNo: enrollmentInput.value, image: imageBase64 });
+                savePeople(people);
+                
+                renderPersonList();
+                event.target.reset();
+                statusEl.textContent = 'Successfully added new person!';
+                statusEl.style.color = 'green';
+                labeledFaceDescriptors = null;
+
+            } catch (error) {
+                console.error('Error adding person:', error);
+                statusEl.textContent = 'Error processing image.';
+                statusEl.style.color = 'red';
+            }
+        }
+        
+        function renderPersonList() {
+            const people = getPeople();
+            const listEl = document.getElementById('person-list');
+            listEl.innerHTML = '';
+            if (people.length === 0) {
+                listEl.innerHTML = '<p class="col-span-full text-center text-gray-500 py-8">No one is registered yet.</p>';
+                return;
+            }
+            people.forEach((person) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white border rounded-lg p-3 shadow-md text-center transition-all duration-300 hover:shadow-xl hover:-translate-y-1';
+                card.innerHTML = `
+                    <img src="${person.image}" alt="${person.name}" class="w-full h-32 object-cover rounded-md mb-3">
+                    <p class="font-bold text-gray-800 truncate">${person.name}</p>
+                    <p class="text-xs text-gray-500 mb-3">${person.enrollmentNo}</p>
+                    <button onclick="showConfirmationModal('${person.enrollmentNo}')" class="w-full mt-2 py-1 px-2 text-sm bg-red-100 text-red-700 font-semibold rounded-md hover:bg-red-200 transition">Remove</button>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function removePerson(enrollmentNo) {
+            showConfirmationModal(enrollmentNo);
+        }
+
+        function renderPendingList() {
+            const pending = getPending();
+            const listEl = document.getElementById('pending-list');
+            const sectionEl = document.getElementById('pending-approvals-section');
+            listEl.innerHTML = '';
+
+            if (pending.length === 0) {
+                sectionEl.style.display = 'none';
+                return;
+            }
+            
+            sectionEl.style.display = 'block';
+            pending.forEach((person, index) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white border rounded-lg p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4';
+                card.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <img src="${person.image}" alt="${person.name}" class="w-16 h-16 object-cover rounded-full">
+                        <div>
+                            <p class="font-bold text-lg text-gray-800">${person.name}</p>
+                            <p class="text-sm text-gray-600">${person.enrollmentNo}</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="approvePerson(${index})" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition">Approve</button>
+                        <button onclick="rejectPerson(${index})" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition">Reject</button>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function approvePerson(index) {
+            const pending = getPending();
+            const personToApprove = pending[index];
+            
+            const people = getPeople();
+            if (people.some(p => p.enrollmentNo === personToApprove.enrollmentNo)) {
+                alert('A person with this enrollment number already exists in the main database.');
+                return;
+            }
+
+            people.push(personToApprove);
+            savePeople(people);
+
+            pending.splice(index, 1);
+            savePending(pending);
+            
+            renderPendingList();
+            renderPersonList();
+            labeledFaceDescriptors = null;
+        }
+
+        function rejectPerson(index) {
+             if (confirm('Are you sure you want to reject this registration?')) {
+                const pending = getPending();
+                pending.splice(index, 1);
+                savePending(pending);
+                renderPendingList();
+            }
+        }
+
+        // --- Student Registration Logic (Section 3) ---
+        async function handleStudentRegistration(event) {
+            event.preventDefault();
+            const nameInput = document.getElementById('student-name');
+            const enrollmentInput = document.getElementById('student-enrollment');
+            const imageInput = document.getElementById('student-image');
+            const statusEl = document.getElementById('student-status');
+
+            statusEl.textContent = 'Processing...';
+            statusEl.style.color = 'blue';
+
+            try {
+                const imageBase64 = await toBase64(imageInput.files[0]);
+                const pending = getPending();
+                const registered = getPeople();
+                const enrollmentNo = enrollmentInput.value;
+
+                if (pending.some(p => p.enrollmentNo === enrollmentNo) || registered.some(p => p.enrollmentNo === enrollmentNo)) {
+                    statusEl.textContent = 'This enrollment number is already registered or pending approval.';
+                    statusEl.style.color = 'red';
+                    return;
+                }
+
+                pending.push({ name: nameInput.value, enrollmentNo: enrollmentNo, image: imageBase64 });
+                savePending(pending);
+                event.target.reset();
+                statusEl.textContent = 'Registration submitted successfully!';
+                statusEl.style.color = 'green';
+
+            } catch(error) {
+                console.error('Error in student registration:', error);
+                statusEl.textContent = 'An error occurred. Please try again.';
+                statusEl.style.color = 'red';
+            }
+        }
+        
+        // --- Professor/Attendance Logic (Section 2) ---
+        async function loadModelsAndDescriptors() {
+            const statusMessage = document.getElementById('status-message');
+            if (labeledFaceDescriptors) {
+                 statusMessage.textContent = 'Ready to scan. Please upload a group photo.';
+                 return;
+            }
+
+            statusMessage.textContent = 'Loading AI models...';
+            const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+            try {
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
+
+                statusMessage.textContent = 'Loading registered faces from database...';
+                labeledFaceDescriptors = await getLabeledFaceDescriptors();
+                statusMessage.textContent = 'Ready to scan. Please upload a group photo.';
+            } catch (error) {
+                console.error("Model Loading Error:", error);
+                statusMessage.textContent = 'Failed to load AI models or registered faces. Please refresh.';
+                statusMessage.style.color = 'red';
+            }
+        }
+
+        async function getLabeledFaceDescriptors() {
+            const people = getPeople();
+            if (people.length === 0) {
+                 throw new Error("No faces are registered. Please contact an admin.");
+            }
+
+            return Promise.all(
+                people.map(async person => {
+                    const img = await faceapi.fetchImage(person.image);
+                    const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+                    if (!detections) {
+                        console.warn(`Could not find a face for ${person.name}. Skipping.`);
+                        return null;
+                    }
+                    return new faceapi.LabeledFaceDescriptors(person.name, [detections.descriptor]);
+                })
+            ).then(descriptors => descriptors.filter(d => d !== null));
+        }
+
+        async function handleGroupImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const loader = document.getElementById('loader');
+            const statusMessage = document.getElementById('status-message');
+            const resultsContainer = document.getElementById('results-container');
+            const uploadedImage = document.getElementById('uploaded-image');
+            const canvas = document.getElementById('recognition-canvas');
+
+            loader.style.display = 'block';
+            statusMessage.textContent = 'Analyzing image...';
+            resultsContainer.style.display = 'none';
+            
+            try {
+                if (!labeledFaceDescriptors) await loadModelsAndDescriptors();
+
+                const imageURL = URL.createObjectURL(file);
+                uploadedImage.src = imageURL;
+                
+                uploadedImage.onload = async () => {
+                    resultsContainer.style.display = 'block';
+                    const displaySize = { width: uploadedImage.clientWidth, height: uploadedImage.clientHeight };
+                    if (displaySize.width === 0 || displaySize.height === 0) {
+                        statusMessage.textContent = 'Error: Image failed to render correctly.';
+                        statusMessage.style.color = 'red';
+                        loader.style.display = 'none';
+                        resultsContainer.style.display = 'none';
+                        return;
+                    }
+                    faceapi.matchDimensions(canvas, displaySize);
+
+                    statusMessage.textContent = 'Detecting faces...';
+                    const detections = await faceapi.detectAllFaces(uploadedImage).withFaceLandmarks().withFaceDescriptors();
+                    const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+                    if (resizedDetections.length === 0) {
+                        statusMessage.textContent = 'No faces detected in the image.';
+                        loader.style.display = 'none';
+                        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+                        document.getElementById('attendance-table-body').innerHTML = '';
+                        return;
+                    }
+
+                    statusMessage.textContent = 'Matching faces...';
+                    const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
+                    const identifiedNames = new Set();
+                    let unknownFacesCount = 0;
+                    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+                    resizedDetections.forEach(detection => {
+                        const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+                        const label = bestMatch.label === 'unknown' ? 'Unknown' : bestMatch.label;
+                        const box = detection.detection.box;
+                        new faceapi.draw.DrawBox(box, { label: label, boxColor: '#4f46e5', labelTextColor: 'white' }).draw(canvas);
+
+                        if (label !== 'Unknown') {
+                            identifiedNames.add(label);
+                        } else {
+                            unknownFacesCount++;
+                        }
+                    });
+
+                    updateAttendance(identifiedNames, unknownFacesCount);
+                    statusMessage.textContent = `Analysis complete. Found ${resizedDetections.length} face(s).`;
+                    loader.style.display = 'none';
+                };
+            } catch (error) {
+                console.error("Error during recognition:", error);
+                statusMessage.textContent = `Error: ${error.message}`;
+                statusMessage.style.color = 'red';
+                loader.style.display = 'none';
+            }
+        }
+        
+        function updateAttendance(identifiedNames, unknownFacesCount = 0) {
+            const allPeople = getPeople();
+            const tableBody = document.getElementById('attendance-table-body');
+            tableBody.innerHTML = '';
+
+            allPeople.forEach(person => {
+                const status = identifiedNames.has(person.name) ? 'Present' : 'Absent';
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="py-3 px-4">${person.name}</td>
+                    <td class="py-3 px-4">
+                        <span class="px-3 py-1 text-sm font-semibold leading-tight rounded-full ${status === 'Present' ? 'text-green-800 bg-green-100' : 'text-red-800 bg-red-100'}">
+                            ${status}
+                        </span>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            if (unknownFacesCount > 0) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="py-3 px-4">Unregistered</td>
+                    <td class="py-3 px-4">
+                        <span class="px-3 py-1 text-sm font-semibold leading-tight rounded-full text-red-800 bg-red-100">
+                            Absent
+                        </span>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            }
+        }
+
+        // --- Helper Functions ---
+        function toBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+    </script>
+
+</body>
+</html>
+
